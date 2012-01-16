@@ -260,7 +260,7 @@
  			var options = form.data('jqv');
    
 			// validate each field (- skip field ajax validation, no necessary since we will perform an ajax form validation)
-            var r=methods._validateFields(form, true);
+            var r=methods._validateFields(form, !options.ajaxFieldValidation);
 		
             if (r && options.ajaxFormValidation) {
                 methods._validateFormWithAjax(form, options);
@@ -380,76 +380,82 @@
          */
         _validateFormWithAjax: function(form, options) {
 
-            var data = form.serialize();
-			var url = (options.ajaxFormValidationURL) ? options.ajaxFormValidationURL : form.attr("action");
-            $.ajax({
-                type: "GET",
-                url: url,
-                cache: false,
-                dataType: "json",
-                data: data,
-                form: form,
-                methods: methods,
-                options: options,
-                beforeSend: function() {
-                    return options.onBeforeAjaxFormValidation(form, options);
-                },
-                error: function(data, transport) {
-                    methods._ajaxError(data, transport);
-                },
-                success: function(json) {
+			if (options.ajaxFormFn)
+			{
+				options.ajaxFormFn (options.onAjaxFormComplete);
+			}
+			else
+			{
+				var data = form.serialize();
+				var url = (options.ajaxFormValidationURL) ? options.ajaxFormValidationURL : form.attr("action");
+				$.ajax({
+					type: "GET",
+					url: url,
+					cache: false,
+					dataType: "json",
+					data: data,
+					form: form,
+					methods: methods,
+					options: options,
+					beforeSend: function() {
+						return options.onBeforeAjaxFormValidation(form, options);
+					},
+					error: function(data, transport) {
+						methods._ajaxError(data, transport);
+					},
+					success: function(json) {
 
-                    if (json !== true) {
+						if (json !== true) {
 
-                        // getting to this case doesn't necessary means that the form is invalid
-                        // the server may return green or closing prompt actions
-                        // this flag helps figuring it out
-                        var errorInForm=false;
-                        for (var i = 0; i < json.length; i++) {
-                            var value = json[i];
-						
-                            var errorFieldId = value[0];
-                            var errorField = $($("#" + errorFieldId)[0]);
+							// getting to this case doesn't necessary means that the form is invalid
+							// the server may return green or closing prompt actions
+							// this flag helps figuring it out
+							var errorInForm=false;
+							for (var i = 0; i < json.length; i++) {
+								var value = json[i];
 							
-                            // make sure we found the element
-                            if (errorField.length == 1) {
+								var errorFieldId = value[0];
+								var errorField = $($("#" + errorFieldId)[0]);
 								
-                                // promptText or selector
-                                var msg = value[2];
-								// if the field is valid
-                                if (value[1] == true) {
+								// make sure we found the element
+								if (errorField.length == 1) {
+									
+									// promptText or selector
+									var msg = value[2];
+									// if the field is valid
+									if (value[1] == true) {
 
-                                    if (msg == ""  || !msg){
-                                        // if for some reason, status==true and error="", just close the prompt
-                                        methods._closePrompt(errorField);
-                                    } else {
-                                        // the field is valid, but we are displaying a green prompt
-                                        if (options.allrules[msg]) {
-                                            var txt = options.allrules[msg].alertTextOk;
-                                            if (txt)
-                                                msg = txt;
-                                        }
-                                        methods._showPrompt(errorField, msg, "pass", false, options, true);
-                                    }
+										if (msg == ""  || !msg){
+											// if for some reason, status==true and error="", just close the prompt
+											methods._closePrompt(errorField);
+										} else {
+											// the field is valid, but we are displaying a green prompt
+											if (options.allrules[msg]) {
+												var txt = options.allrules[msg].alertTextOk;
+												if (txt)
+													msg = txt;
+											}
+											methods._showPrompt(errorField, msg, "pass", false, options, true);
+										}
 
-                                } else {
-                                    // the field is invalid, show the red error prompt
-                                    errorInForm|=true;
-                                    if (options.allrules[msg]) {
-                                        var txt = options.allrules[msg].alertText;
-                                        if (txt)
-                                            msg = txt;
-                                    }
-                                    methods._showPrompt(errorField, msg, "", false, options, true);
-                                }
-                            }
-                        }
-                        options.onAjaxFormComplete(!errorInForm, form, json, options);
-                    } else
-                        options.onAjaxFormComplete(true, form, "", options);
-                }
-            });
-
+									} else {
+										// the field is invalid, show the red error prompt
+										errorInForm|=true;
+										if (options.allrules[msg]) {
+											var txt = options.allrules[msg].alertText;
+											if (txt)
+												msg = txt;
+										}
+										methods._showPrompt(errorField, msg, "", false, options, true);
+									}
+								}
+							}
+							options.onAjaxFormComplete(!errorInForm, form, json, options);
+						} else
+							options.onAjaxFormComplete(true, form, "", options);
+					}
+				});
+			}
         },
         /**
          * Validates field, shows prompts accordingly
@@ -1026,6 +1032,42 @@
             } 
             if (!valid) return options.allrules.creditCard.alertText;
         },
+
+		handleAjaxResponse: function (field, msg, isError, options) {
+			fieldId = field.attr('id')
+			if (isError)
+			{
+				options.ajaxValidCache[fieldId] = false;
+				methods.ajaxShowError (field, msg, options);
+			}
+			else
+			{
+				options.isError = false;
+				methods.closePrompt(field);
+				if (options.ajaxValidCache[fieldId] !== undefined)
+					options.ajaxValidCache[fieldId] = true;
+			}
+			field.trigger("jqv.field.result", [field, !options.isError, msg]);
+		},
+
+		ajaxShowError: function (field, msg, options)
+		{
+			options.isError = true;
+
+			// resolve the msg prompt
+			if(msg) {
+				if (options.allrules[msg]) {
+					var txt = options.allrules[msg].alertText;
+					if (txt)
+						msg = txt;
+				}
+			}
+			else
+				msg = rule.alertText;
+
+			methods._showPrompt(field, msg, "", true, options);
+		},
+
         /**
          * Ajax field validation
          *
@@ -1061,79 +1103,89 @@
             } else {
               extraDataDynamic = "";              
             }
+
+			var ajaxSuccess = function (status, msg) {
+				if (!status) {
+					id = field.attr('id')
+					// Houston we got a problem - display an red prompt
+					options.ajaxValidCache[id] = false;
+					options.isError = true;
+
+					// resolve the msg prompt
+					if(msg) {
+						if (options.allrules[msg]) {
+							var txt = options.allrules[msg].alertText;
+							if (txt)
+								msg = txt;
+						}
+					}
+					else
+						msg = rule.alertText;
+					
+					methods._showPrompt(field, msg, "", true, options);
+				} else {
+					if (options.ajaxValidCache[id] !== undefined)
+						options.ajaxValidCache[id] = true;
+
+					// resolves the msg prompt
+					if(msg) {
+						if (options.allrules[msg]) {
+							var txt = options.allrules[msg].alertTextOk;
+							if (txt)
+								msg = txt;
+						}
+					}
+					else
+						msg = rule.alertTextOk;                                
+
+					// see if we should display a green prompt
+					if (msg)
+						methods._showPrompt(field, msg, "pass", true, options);
+					else
+						methods._closePrompt(field);
+				}
+               	field.trigger("jqv.field.result", [field, !options.isError, msg]);
+			}
                                 
             if (!options.isError) {
-                $.ajax({
-                    type: "GET",
-                    url: rule.url,
-                    cache: false,
-                    dataType: "json",
-                    data: "fieldId=" + field.attr("id") + "&fieldValue=" + field.val() + "&extraData=" + extraData + "&" + extraDataDynamic,
-                    field: field,
-                    rule: rule,
-                    methods: methods,
-                    options: options,
-                    beforeSend: function() {
-                        // build the loading prompt
-                        var loadingText = rule.alertTextLoad;
-                        if (loadingText)
-                            methods._showPrompt(field, loadingText, "load", true, options);
-                    },
-                    error: function(data, transport) {
-                        methods._ajaxError(data, transport);
-                    },
-                    success: function(json) {
-						
-                        // asynchronously called on success, data is the json answer from the server
-                        var errorFieldId = json[0];
-                        var errorField = $($("#" + errorFieldId)[0]);
-                        // make sure we found the element
-                        if (errorField.length == 1) {
-                            var status = json[1];
-							// read the optional msg from the server
-							var msg = json[2];
-                            if (!status) {
-                                // Houston we got a problem - display an red prompt
-                                options.ajaxValidCache[errorFieldId] = false;
-                                options.isError = true;
-
-								// resolve the msg prompt
-								if(msg) {
-									if (options.allrules[msg]) {
-                                    	var txt = options.allrules[msg].alertText;
-                                    	if (txt)
-                                    		msg = txt;
-                                    }
-								}
-								else
-                                    msg = rule.alertText;
-                                
-								methods._showPrompt(errorField, msg, "", true, options);
-                            } else {
-                                if (options.ajaxValidCache[errorFieldId] !== undefined)
-                                    options.ajaxValidCache[errorFieldId] = true;
-
-                                // resolves the msg prompt
-								if(msg) {
-									if (options.allrules[msg]) {
-							           	var txt = options.allrules[msg].alertTextOk;
-							           	if (txt)
-							           		msg = txt;
-							        }
-								}
-								else
-							       	msg = rule.alertTextOk;                                
-
-								// see if we should display a green prompt
-                                if (msg)
-                                    methods._showPrompt(errorField, msg, "pass", true, options);
-                                else
-                                    methods._closePrompt(errorField);
-                            }
-                        }
-                        errorField.trigger("jqv.field.result", [errorField, !options.isError, msg]);
-                    }
-                });
+				if (rule.ajaxFn)
+					rule.ajaxFn (field, rules, i, options, ajaxSuccess);
+				else
+				{
+					$.ajax({
+						type: "GET",
+						url: rule.url,
+						cache: false,
+						dataType: "json",
+						data: "fieldId=" + field.attr("id") + "&fieldValue=" + field.val() + "&extraData=" + extraData + "&" + extraDataDynamic,
+						field: field,
+						rule: rule,
+						methods: methods,
+						options: options,
+						beforeSend: function() {
+							// build the loading prompt
+							var loadingText = rule.alertTextLoad;
+							if (loadingText)
+								methods._showPrompt(field, loadingText, "load", true, options);
+						},
+						error: function(data, transport) {
+							methods._ajaxError(data, transport);
+						},
+						success: function(json) {
+							
+							// asynchronously called on success, data is the json answer from the server
+							var errorFieldId = json[0];
+							var errorField = $($("#" + errorFieldId)[0]);
+							// make sure we found the element
+							if (errorField.length == 1) {
+								var status = json[1];
+								// read the optional msg from the server
+								var msg = json[2];
+							}
+							ajaxSuccess (status, msg);
+						}
+					});
+				}
             }
         },
         /**
